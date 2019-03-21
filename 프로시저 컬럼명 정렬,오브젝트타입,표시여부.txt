@@ -1,0 +1,38 @@
+정렬 	오브젝트타입	표시여부
+L(문자)	004		Y		
+R(숫자)			N
+
+
+`
+CREATE PROCEDURE APR_PDM0301(
+	ItemCode NVARCHAR(20),
+	TreeType NVARCHAR(20)
+)
+
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER
+
+AS
+BEGIN
+
+	SELECT
+		A."Code" AS "모품목코드L066Y",
+		A."Name" AS "모품목명L066Y",
+		C."FrgnName" AS "규격L004Y",
+		C."InvntryUom" AS "단위L004Y",
+		CASE WHEN INSTR( D."ItmsGrpNam", '.' ) > 0	THEN
+			SUBSTRING( D."ItmsGrpNam", INSTR( D."ItmsGrpNam", '.' ) + 1 )
+		ELSE
+			D."ItmsGrpNam"
+		END AS "품목계정L052Y"	,
+		A."Qauntity" AS "기준수량R066Y"
+	FROM OITT A
+	INNER JOIN ITT1 B ON A."Code" = B."Father"
+	INNER JOIN OITM C ON A."Code" = C."ItemCode"
+	INNER JOIN OITB D ON C."ItmsGrpCod" = D."ItmsGrpCod"
+	WHERE C."ItemCode" = :ItemCode
+	AND A."TreeType" = :TreeType
+	GROUP BY A."Code", A."Name", C."FrgnName", C."InvntryUom", D."ItmsGrpNam", A."Qauntity";
+
+END;
+
