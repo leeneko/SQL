@@ -1,0 +1,37 @@
+'문자열 데이터', "컬럼명"
+
+테이블에 저장된 데이터만 삭제할 때
+TRUNCATE TABLE 테이블이름
+
+테이블에 레코드 추가
+INSERT INTO 테이블이름(필드이름1, 필드이름2, 필드이름3, ...)
+VALUES (데이터값1, 데이터값2, 데이터값3, ...)
+
+INSERT INTO 테이블이름
+VALUES (데이터값1, 데이터값2, 데이터값3, ...)
+
+UPDATE 테이블이름
+SET 필드이름1=데이터값1, 필드이름2=데이터값2, ...
+WHERE 필드이름=데이터값
+
+DELETE FROM 테이블이름
+WHERE 필드이름=데이터값
+
+SELECT
+	*
+	SUM(CASE WHEN A"date" = '20190101' THEN B."Qty" ELSE 0 END ) AS "1일"
+INTO TEMP
+FROM "테이블이름1" A
+INNER JOIN "테이블이름2" B ON A."컬럼명a" = B."컬럼명b"
+WHERE A."컬럼명1" = '1'
+AND A."컬럼명2" BETWEEN '20190101' AND '20190131'
+GROUP BY A."컬럼명3"
+ORDER BY B."컬럼명" DESC
+
+입력한 날의 달에 마지막 날짜
+LAST_DAY(sysdate)
+
+WHILE a <= b DO
+	function
+	a := :a + 1;
+END WHILE
