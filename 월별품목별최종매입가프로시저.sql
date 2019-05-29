@@ -1,15 +1,33 @@
+DROP PROCEDURE APR_QM_1800_100;
 CREATE PROCEDURE APR_QM_1800_100(
-	IN CODE	NVARCHAR(100),
-	IN GRP	NVARCHAR(5)
+	IN CODE	NVARCHAR(50),
+	IN GRP	NVARCHAR(5),
+	OUT TEMP TABLE (
+		"품목코드"	NVARCHAR(100),
+		"품명"		NVARCHAR(200),
+		"LastPurPrc" DECIMAL(28, 6),
+		"1월"		DECIMAL(28, 6),
+		"2월"		DECIMAL(28, 6),
+		"3월"		DECIMAL(28, 6),
+		"4월"		DECIMAL(28, 6),
+		"5월"		DECIMAL(28, 6),
+		"6월"		DECIMAL(28, 6),
+		"7월"		DECIMAL(28, 6),
+		"8월"		DECIMAL(28, 6),
+		"9월"		DECIMAL(28, 6),
+		"10월"		DECIMAL(28, 6),
+		"11월"		DECIMAL(28, 6),
+		"12월"		DECIMAL(28, 6)
+	)
 )
 LANGUAGE SQLSCRIPT
 SQL SECURITY INVOKER
 AS
-	BEGIN
-	SELECT
-		A.ITEMCODE,
-		B."ItemName",
-		B."LastPurPrc",
+BEGIN
+	TEMP = SELECT
+		A.ITEMCODE AS "품목코드",
+		B."ItemName" AS "품명",
+		B."LastPurPrc" AS "LastPurPrc",
 		MAX(CASE WHEN RIGHT(DOCDATE, 2) = '01' THEN A.PRICE END) AS "1월",
 		MAX(CASE WHEN RIGHT(DOCDATE, 2) = '02' THEN A.PRICE END) AS "2월",
 		MAX(CASE WHEN RIGHT(DOCDATE, 2) = '03' THEN A.PRICE END) AS "3월",
@@ -35,16 +53,17 @@ AS
 				TO_NVARCHAR(A."DocDate", 'YYYYMM') AS DOCDATE,
 				MAX(A."TransNum") AS TRANSNUM
 			FROM OINM A
-			INNER JOIN OPCH B ON A."CreatedBy" = B."DocEntry"
-			WHERE A."TransType" = 18
+			INNER JOIN OPDN B ON A."CreatedBy" = B."DocEntry"
+			WHERE A."TransType" = 20
 			AND A."Price" > 0
 			AND B."CANCELED" = 'N'
 			GROUP BY A."ItemCode", A."DocDate"
 		) B ON A."ItemCode" = B.ITEMCODE AND A."TransNum" = B.TRANSNUM
 	) A
 	INNER JOIN OITM B ON A.ITEMCODE = B."ItemCode"
-	WHERE A.ITEMCODE = :CODE OR '' = :CODE
-	AND B."ItmsGrpCod" = :GRP OR '' = :GRP
+	WHERE (A.ITEMCODE = :CODE OR '' = :CODE)
+	AND (CAST(B."ItmsGrpCod" AS NVARCHAR) = :GRP OR '0' = :GRP)
 	GROUP BY A.ITEMCODE, B."ItemName", B."LastPurPrc"
 	ORDER BY A.ITEMCODE;
 END;
+CALL APR_QM_1800_100('', '0', ?);

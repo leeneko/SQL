@@ -34,6 +34,7 @@ WHERE 필드이름=데이터값
 DELETE FROM 테이블이름
 WHERE 필드이름=데이터값
 
+※ CASE문
 CASE WHEN THEN (조회된 값에 대한 조건 걸기)
 CASE
 	WHEN 조건1 TEHN 조회할 값1
@@ -58,7 +59,10 @@ END WHILE
 3. IFNULL()
 4. NULLIF()
 
-SELECT :ROWCNT FROM DUMMY;
+※ IF문
+IF boolean-expression THEN
+	statements
+END IF;
 
 http://intomysql.blogspot.com/2011/01/distinct-group-by.html
 DISTINCT는 주로 UNIQUE한 컬럼이나 튜플(레코드)을 조회하는 경우 사용되며,
