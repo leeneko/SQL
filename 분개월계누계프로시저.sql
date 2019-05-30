@@ -1,0 +1,498 @@
+DROP PROCEDURE APR_SAM_FAM0932;
+CREATE PROCEDURE APR_SAM_FAM0932 (
+	IN BPLID	NVARCHAR(5),
+	IN FR_DT	NVARCHAR(10),
+	IN TO_DT	NVARCHAR(10),
+	IN CARDCODE	NVARCHAR(10)
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER
+AS
+BEGIN
+	CREATE LOCAL TEMPORARY TABLE #TMPJDT (
+		ROWTYPE		INT,
+		ROWNO		INT,
+		MON			NVARCHAR(5),
+		REFDATE		LONGDATE,
+		TRANSID		NVARCHAR(11),
+		MEMO		NVARCHAR(50),
+		SHORTNAME	NVARCHAR(30),
+		CONTRAACT	NVARCHAR(30),
+		DEBIT		DECIMAL(21,6),
+		CREDIT		DECIMAL(21,6),
+		BALANCE		DECIMAL(21,6)
+	);
+	
+	-- 임시테이블에 필요한 데이터 적립
+	INSERT INTO #TMPJDT (
+		ROWTYPE, ROWNO, MON, REFDATE, TRANSID, MEMO, SHORTNAME, CONTRAACT, DEBIT, CREDIT, BALANCE
+	)
+	SELECT
+		0 AS ROWTYPE,
+		0 AS ROWNO,
+		0 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 이    월 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" < :FR_DT
+	
+	UNION ALL
+	
+	SELECT
+		1 AS ROWTYPE,
+		99999 AS ROWNO,
+		MAX(V."Month") AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		CASE
+			WHEN V."Month" = 1
+			THEN '[ 1월 합 계 ]'
+			WHEN V."Month" = 2
+			THEN '[ 2월 합 계 ]'
+			WHEN V."Month" = 3
+			THEN '[ 3월 합 계 ]'
+			WHEN V."Month" = 4
+			THEN '[ 4월 합 계 ]'
+			WHEN V."Month" = 5
+			THEN '[ 5월 합 계 ]'
+			WHEN V."Month" = 6
+			THEN '[ 6월 합 계 ]'
+			WHEN V."Month" = 7
+			THEN '[ 7월 합 계 ]'
+			WHEN V."Month" = 8
+			THEN '[ 8월 합 계 ]'
+			WHEN V."Month" = 9
+			THEN '[ 9월 합 계 ]'
+			WHEN V."Month" = 10
+			THEN '[ 10월 합 계 ]'
+			WHEN V."Month" = 11
+			THEN '[ 11월 합 계 ]'
+			WHEN V."Month" = 12
+			THEN '[ 12월 합 계 ]'
+			ELSE NULL
+		END AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(V."Debit") AS DEBIT,
+		SUM(V."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN C."U_CrdrGubn" = '2'
+				THEN COALESCE(V."Credit", 0) - COALESCE(V."Debit", 0)
+				ELSE COALESCE(V."Debit", 0) - COALESCE(V."Credit", 0)
+			END
+		) AS BALANCE
+	FROM
+	(
+		SELECT
+			MONTH(A."RefDate") AS "Month",
+			A."RefDate",
+			A."Account",
+			A."TransId",
+			A."LineMemo",
+			A."ShortName",
+			A."ContraAct",
+			A."Debit",
+			A."Credit"
+		FROM JDT1 A
+		WHERE A."Account" = :CARDCODE
+		AND A."BPLId" = :BPLID
+		AND A."RefDate" BETWEEN :FR_DT AND :TO_DT
+	) V
+	INNER JOIN OACT C ON V."Account" = C."AcctCode"
+	GROUP BY ROLLUP(V."Month")
+	HAVING 	GROUPING(V."Month") = 0
+	
+	UNION ALL
+	
+	SELECT -- 데이터
+		0 AS ROWTYPE,
+		RANK() OVER (ORDER BY A."RefDate", A."TransId", "Line_ID") AS ROWNO,
+		MONTH(A."RefDate") AS MON,
+		A."RefDate" AS REFDATE,
+		A."TransId" AS TRANSID,
+		A."LineMemo" AS MEMO,
+		A."ShortName" AS SHORTNAME,
+		A."ContraAct" AS CONTRAACT,
+		A."Debit" AS DEBIT,
+		A."Credit" AS CREDIT,
+		CASE
+			WHEN B."U_CrdrGubn" = '2'
+			THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+			ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+		END AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" BETWEEN :FR_DT AND :TO_DT
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		1 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 1 월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '0101')
+	
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		2 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 2월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '0201')
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		3 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 3월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '0301')
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		4 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 4월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '0401')
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		5 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 5월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '0501')
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		6 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 6월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '0601')
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		7 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 7월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '0701')
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		8 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 8월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '0801')
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		9 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 9월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '0901')
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		10 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 10월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '1001')
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		11 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 11월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '1101')
+
+	UNION ALL
+	
+	SELECT
+		2 AS ROWTYPE,
+		99999 AS ROWNO,
+		12 AS MON,
+		NULL AS REFDATE,
+		NULL AS TRANSID,
+		'[ 12월 누 계 ]' AS MEMO,
+		NULL AS SHORTNAME,
+		NULL AS CONTRAACT,
+		SUM(A."Debit") AS DEBIT,
+		SUM(A."Credit") AS CREDIT,
+		SUM(
+			CASE
+				WHEN B."U_CrdrGubn" = '2'
+				THEN COALESCE(A."Credit", 0) - COALESCE(A."Debit", 0)
+				ELSE COALESCE(A."Debit", 0) - COALESCE(A."Credit", 0)
+			END
+		) AS BALANCE
+	FROM JDT1 A
+	INNER JOIN OACT B ON A."Account" = B."AcctCode"
+	WHERE A."Account" = :CARDCODE
+	AND A."BPLId" = :BPLID
+	AND A."RefDate" <= LAST_DAY(YEAR(:FR_DT) || '0201');
+	
+--	SELECT * FROM #TMPJDT A WHERE (A.MON BETWEEN MONTH(:FR_DT) AND MONTH(:TO_DT) OR A.MON = 0) ORDER BY A.MON, A.ROWTYPE, A.ROWNO;
+	
+	SELECT
+		TO_NVARCHAR(REFDATE, 'YYYY-MM-DD') AS "전기일L000Y",
+		TRANSID AS "원천 번호L000Y",
+		MEMO AS "세부사항L000Y",
+		CASE
+			WHEN COALESCE(B1."CardCode", '') != ''
+			THEN B1."CardCode"
+			ELSE B2."CardCode"
+		END AS "거래처코드L000Y",
+		CASE
+			WHEN COALESCE(B1."CardCode", '') != ''
+			THEN B1."CardName"
+			ELSE B2."CardName"
+		END AS "거래처명L000Y",
+		ADDCOMMA(CAST(A.DEBIT	AS BIGINT)) AS "차변R000Y",
+		ADDCOMMA(CAST(A.CREDIT	AS BIGINT)) AS "대변R000Y",
+		ADDCOMMA(CAST(
+			CASE
+				WHEN A.ROWNO = 0
+				THEN A.DEBIT - A.CREDIT
+				WHEN A.ROWNO = 99999
+				THEN NULL
+				ELSE (
+					SELECT
+						SUM(X.BALANCE)
+					FROM #TMPJDT X
+					WHERE X.ROWNO <= A.ROWNO
+				)
+			END
+		AS BIGINT)) AS "잔액R000Y"
+	FROM #TMPJDT A
+	LEFT JOIN OCRD B1 ON A.SHORTNAME = B1."CardCode"
+	LEFT JOIN OCRD B2 ON A.CONTRAACT = B2."CardCode"
+	WHERE (A.MON BETWEEN MONTH(:FR_DT) AND MONTH(:TO_DT) OR A.MON = 0)
+	ORDER BY A.MON, A.ROWTYPE, A.ROWNO;
+	
+	DROP TABLE #TMPJDT;
+END;
+CALL APR_SAM_FAM0932('1', '20190101', '20190331', '25200');
