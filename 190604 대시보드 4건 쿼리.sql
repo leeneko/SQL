@@ -1,5 +1,4 @@
 /**********************************유지보수금액************************************/
-
 SELECT
 	A."RefDate",
 	E."GroupName",
@@ -29,7 +28,6 @@ AND (YEAR(A."RefDate") = YEAR(NOW()) OR YEAR(A."RefDate") = YEAR(ADD_YEARS(NOW()
 GROUP BY A."RefDate", E."GroupName";
 
 /**********************************유지보수증감률************************************/
-
 SELECT
 	V."GroupName",
 	SUM(V."Pre"),
@@ -114,7 +112,7 @@ GROUP BY A."RefDate"
 ) V
 GROUP BY V.YQ;
 
-/*************************************프로젝트 진행현황*******************************************/
+/*************************************프로젝트 진행률*******************************************/
 SELECT
 	A.CARDNAME AS "거래처명",
 	A.NAME AS "프로젝트명",
@@ -146,3 +144,51 @@ AND A.STATUS != 'F'
 AND B.FINISH = 'N'
 GROUP BY A.CARDCODE, A.CARDNAME, A.NAME, F."Name", C."SlpName", D."lastName", D."firstName", A.STATUS, A."START", A.DUEDATE, A.CLOSING, A.FINISHED
 ORDER BY A."START";
+
+/************************************프로젝트 진행률2****************************************/
+SELECT
+	B."CardName",
+	100 AS "All",
+	CAST(((DAYS_BETWEEN (A."START", NOW()) / DAYS_BETWEEN (A."START", A.DUEDATE)) * 100) AS INT) AS "Days",
+	A.FINISHED AS "Progress"
+FROM OPMG A
+INNER JOIN OCRD B ON A.CARDCODE = B."CardCode"
+WHERE YEAR(A."START") = YEAR(NOW())
+AND A.STATUS != 'F'
+ORDER BY A."START";
+
+/***********************************유지보수 신규/해지**********************************/
+SELECT
+	COALESCE(COUNT(V."CardCode"), 0) AS "Cnt",
+	COALESCE(V."Type", '') AS "Type",
+	CASE
+		WHEN MONTH(V."RefDate") IN ('1', '2', '3')
+		THEN 'Q1'
+		WHEN MONTH(V."RefDate") IN ('4', '5', '6')
+		THEN 'Q2'
+		WHEN MONTH(V."RefDate") IN ('7', '8', '9')
+		THEN 'Q3'
+		WHEN MONTH(V."RefDate") IN ('10', '11', '12')
+		THEN 'Q4'
+		ELSE ''
+	END AS "QDate"
+FROM (
+SELECT
+	'신규' AS "Type",
+	A."CardCode",
+	A."CardName",
+	A."validFrom" AS "RefDate"
+FROM OCRD A
+WHERE YEAR(A."validFrom") = YEAR(NOW())
+
+UNION ALL
+
+SELECT
+	'해지' AS "Type",
+	A."CardCode",
+	A."CardName",
+	A."validTo"
+FROM OCRD A
+WHERE YEAR(A."validTo") = YEAR(NOW())
+) V
+GROUP BY V."Type", V."RefDate"
