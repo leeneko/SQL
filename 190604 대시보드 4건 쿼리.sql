@@ -25,6 +25,7 @@ WHERE A."TransType" IN ('13', '14')
 AND C."CANCELED" != 'Y'
 AND B."ContraAct" = '4140101'
 AND (YEAR(A."RefDate") = YEAR(NOW()) OR YEAR(A."RefDate") = YEAR(ADD_YEARS(NOW(), -1)))
+--AND ((A."RefDate" BETWEEN YEAR(NOW()) || '0101' AND NOW()) OR (A."RefDate" BETWEEN YEAR(ADD_YEARS(NOW(), -1)) || 0101 AND ADD_YEARS(NOW(), -1)))
 GROUP BY A."RefDate", E."GroupName";
 
 /**********************************유지보수증감률************************************/
