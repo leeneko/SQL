@@ -115,7 +115,6 @@ END IF;
 SQL 서버 로그인 시에 실행하는 LOGON TRIGGER, 특정 데이터베이스 안의 DDL 이벤트(CREATE TABLE 등)에 반응하는 DDL 트리거, 그리고 테이블이나 뷰의 SELECT, UPDATE, DELETE, INSERT 등에 반응하는 DML 트리거 등이 있다.
 
 
-
 http://intomysql.blogspot.com/2011/01/distinct-group-by.html
 DISTINCT는 주로 UNIQUE한 컬럼이나 튜플(레코드)을 조회하는 경우 사용되며,
 GROUP BY는 데이터를 그룹핑해서 그 결과를 가져오는 경우 사용되는 쿼리 형태이다.
