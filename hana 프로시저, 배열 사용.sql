@@ -9,8 +9,11 @@ AS
 BEGIN
 	DECLARE GRPCODE NVARCHAR(10) ARRAY;
 	DECLARE GRPQTY INT ARRAY;
-	DECLARE GRPMAX INT;
+	DECLARE FINALSEQ INT;
 	DECLARE GRPCODETEMP NVARCHAR(10);
+	DECLARE GRPQTYTEMP INT;
+	DECLARE GRPMAX INT;
+	DECLARE ALREADY INT;
 	DECLARE i INT;
 	
 	-- 골고루 관리에 등록된 그룹코드 개수 카운트
@@ -31,12 +34,93 @@ BEGIN
 		AND "LineId" = :i;
 		
 		GRPCODE[:i] := GRPCODETEMP;
+		
+		SELECT
+			"U_QUANTITY"
+		INTO GRPQTYTEMP
+		FROM "@APR_TMP1"
+		WHERE "Code" = :ITEMCODE
+		AND "LineId" = i;
+		
+		GRPQTY[:i] := GRPQTYTEMP;
+	END FOR;
+	
+	/*
+			GRPCODE	GRPQTY
+		1	1014	5
+		2	1015	5
+	*/
+	
+	CREATE LOCAL TEMPORARY TABLE #TEMPLIST
+	(
+		SEQ INT,
+		GRPCODE NVARCHAR(10),
+		ITEMCODE NVARCHAR(30),
+		QUANTITY INT,
+		REQUIRED NVARCHAR(10)
+	);
+	
+	-- 필수값을 설정 해도 안해도 BOM으로부터 필요한 개수만큼 불러오기
+	-- 필수값 먼저 가져오기
+	INSERT INTO #TEMPLIST
+	SELECT
+		0,
+		C."U_GROUP2",
+		B."Code",
+		B."Quantity",
+		B."U_USAGE"
+	FROM OITT A
+	INNER JOIN ITT1 B ON A."Code" = B."Father"
+	INNER JOIN OITM C ON B."Code" = C."ItemCode"
+	WHERE A."Code" = :ITEMCODE
+	AND B."U_USAGE" = 'R';
+	
+	-- 그룹코드별로 나머지 값 가져오기
+	i := 1;
+	FOR i IN 1..GRPMAX DO
+		-- 그룹코드별로 임시테이블에 저장된 필수값의 개수만큼 가져와야할 개수 GRPQTY를 감소시킨다.
+		ALREADY := 0;
+		
+		SELECT
+			COUNT(A."ITEMCODE")
+		INTO ALREADY
+		FROM #TEMPLIST A
+		WHERE A."GRPCODE" = :GRPCODE[:i];
+		
+		GRPQTY[:i] := GRPQTY[:i] - ALREADY
+		
+		-- 중분류 시작값으로부터, 사용여부가 Y인 품목 불러오기
+		-- 필수값이 1개 있다면 5,5 개 가져올 것을, 5와 4개 불러오게 되고
+		-- 필수값이 0개 있다면 5,5 개 그대로이므로 BOM으로부터 해당하는 값만큼 불러오기
+		CREATE LOCAL TEMPORARY TABLE #TEMPBOM
+		(
+			SEQ INT,
+			GRPCODE NVARCHAR(10),
+			ITEMCODE NVARCHAR(30),
+			QUANTITY INT
+		);
+		-- BOM으로부터 각 단계 순번 매겨서
+		INSERT INTO #TEMPBOM
+		SELECT
+			ROW_NUMBER() OVER (ORDER BY A."ChildNum"),
+			B."U_GROUP2",
+			A."Code",
+			A."Quantity"
+		FROM ITT1 A
+		INNER JOIN OITM B ON A."Code" = B."ItemCode"
+		WHERE B."U_GROUP2" = :GRPCODE[:i];
 	END FOR;
 	
 	-- 배열 GRPCODE의 길이만큼 반복
+	/*
 	i := 1;
 	FOR i IN 1..CARDINALITY(:GRPCODE) DO
-		SELECT :GRPCODE[:i] FROM DUMMY;
+		SELECT :GRPCODE[:i], :GRPQTY[:i] FROM DUMMY;
 	END FOR;
+	*/
+	
+	SELECT * FROM #TEMPLIST;
+	
+	DROP TABLE #TEMPLIST;
 END;
 CALL APR_GET_TBOM ('S212', 1);
