@@ -1,0 +1,352 @@
+ALTER PROCEDURE APR_OEM0104 (
+	IN DOCENTRY NVARCHAR(10)
+)
+LANGUAGE SQLSCRIPT
+SQL SECURITY INVOKER
+AS
+BEGIN
+	DECLARE CARDCODE NVARCHAR(50); -- 거래처코드
+	DECLARE STARTSEPARATOR NVARCHAR(10); -- 거래처별 품목코드 앞 구분자
+	DECLARE ENDSEPARATOR NVARCHAR(10); -- 거래처별 품목코드 뒤 구분자
+	DECLARE i, j INT; -- 반복문에서 쓰일 변수
+	DECLARE RDR2LENGTH INT; -- @APR_RDR2 길이
+	DECLARE C01ITEMLEN INT; -- 홈페이지(C00001), 엑셀의 품목 정보 '/'로 나눈 개수 예) C102/C104/총2팩 : 13 - 11 = 2
+	DECLARE C01ITEM NVARCHAR(200); -- 품목코드를 짜를 때 담아두는 임시 변수 예) C102를 떼어 사용하고 난 뒤 나머지 C104/총2팩 정보 유지
+	DECLARE TITEMCODE NVARCHAR(50); -- 떼어온 C102
+	DECLARE ITEMCODE NVARCHAR(50); -- 혹 개수가 표기되어 C301{2} 와 같이 넘어왔다면 C301만 담는 변수
+	DECLARE ORDERQTY INT; -- 개수가 표기되어왔다면 2라는 개수를 담는 변수
+	DECLARE BASEORDERNO NVARCHAR(50); -- 홈페이지 사은품이 여러개로 들어오기 때문에 사용됨, 기준 주문 번호
+	DECLARE BASELINEID INT; -- 홈페이지 사은품이 여러개로 들어오기 때문에 사용됨, 기준 행 번호
+	DECLARE ITEMNAME NVARCHAR(100); -- 품명 임시 저장
+	DECLARE TREETYPE NVARCHAR(10); -- 세트, 골고루 유형 임시 저장
+	
+	CREATE LOCAL TEMPORARY TABLE #TEMPORDER (
+		ORDERNO NVARCHAR(30),
+		ORDERDT NVARCHAR(10),
+		DOCDATE NVARCHAR(10),
+		ITEMCODE NVARCHAR(50),
+		ITEMNAME NVARCHAR(100),
+		QUANTITY INT,
+		PRICE INT,
+		ORDERNM NVARCHAR(50),
+		ORDERTEL NVARCHAR(50),
+		RECEINM NVARCHAR(50),
+		RECPOST NVARCHAR(50),
+		RECADD NVARCHAR(200),
+		RECTEL NVARCHAR(50),
+		REQUEST NVARCHAR(200),
+		TOTAMT INT,
+		MESSAGE NVARCHAR(200),
+		COMM NVARCHAR(10),
+		EVENT NVARCHAR(10),
+		TREETYPE NVARCHAR(10),
+		DILLNUM NVARCHAR(30),
+		SETCODE NVARCHAR(10),
+		ADDORDER NVARCHAR(10),
+		ORDERNAME NVARCHAR(100),
+		USERID NVARCHAR(30)
+	);
+	
+	-- 거래처와 엑셀타입(/, (), 「」 등) 불러오기
+	SELECT
+		COALESCE(A."U_CARDCODE", ''),
+		COALESCE(C."U_START", ''),
+		COALESCE(C."U_END", '')
+	INTO CARDCODE, STARTSEPARATOR, ENDSEPARATOR
+	FROM "@APR_ORDR" A
+	INNER JOIN OCRD B ON A."U_CARDCODE" = B."CardCode"
+	LEFT JOIN "@APR_OXLS" C ON B."U_XLSTYPE" = C."Code"
+	WHERE A."DocEntry" = :DOCENTRY;
+	
+	-- 홈페이지는 '/' 기준으로 짜르고 맨마지막은 총@팩 이라는 필요없는 정보 삭제
+	IF :CARDCODE = 'C00001'
+	THEN
+		SELECT
+			MAX(A."LineId")
+		INTO RDR2LENGTH
+		FROM "@APR_RDR2" A
+		WHERE A."DocEntry" = :DOCENTRY;
+		
+		-- 엑셀 데이터 1줄마다
+		FOR i IN 0..RDR2LENGTH DO
+			SELECT
+				LENGTH(A."U_ITEMCODE") - LENGTH(REPLACE(A."U_ITEMCODE", :STARTSEPARATOR, '')),
+				A."U_ITEMCODE"
+			INTO C01ITEMLEN, C01ITEM
+			FROM "@APR_RDR2" A
+			WHERE A."DocEntry" = :DOCENTRY
+			AND A."LineId" = :i;
+			
+			-- 선택옵션
+			j := 0;
+			WHILE j < C01ITEMLEN DO
+				SELECT
+					SUBSTR_BEFORE(:C01ITEM, :STARTSEPARATOR),
+					SUBSTR_AFTER(:C01ITEM, :STARTSEPARATOR)
+				INTO TITEMCODE, C01ITEM
+				FROM DUMMY;
+				
+				IF SUBSTR_BEFORE(:TITEMCODE, '{') = ''
+				THEN
+					ITEMCODE := :TITEMCODE;
+					ORDERQTY := 1;
+				ELSE
+					ITEMCODE := SUBSTR_BEFORE(:TITEMCODE, '{');
+					ORDERQTY := SUBSTR_AFTER(SUBSTR_BEFORE(:TITEMCODE, '}'), '{');
+				END IF;
+				
+				-- SELECT :ITEMCODE, :ORDERQTY, B."ItemName" FROM DUMMY INNER JOIN OITM B ON :ITEMCODE = B."ItemCode";
+				
+				
+				INSERT INTO #TEMPORDER
+				SELECT
+					A."U_ORDERNO" AS "ORDERNO",
+					TO_NVARCHAR(A."U_ORDERDT", 'YYYYMMDD') AS "ORDERDT",
+					TO_NVARCHAR(A."U_DOCDATE", 'YYYYMMDD') AS "DOCDATE",
+					:ITEMCODE AS "ITEMCODE",
+					B."ItemName" AS "ITEMNAME",
+					:ORDERQTY AS "QUANTITY",
+					A."U_PRICE" AS "PRICE",
+					A."U_ORDERNM" AS "ORDERNM",
+					A."U_ORDERTEL" AS "ORDERTEL",
+					A."U_RECEINM" AS "RECEINM",
+					A."U_RECPOST" AS "RECPOST",
+					A."U_RECADD" AS "RECADD",
+					A."U_RECTEL" AS "RECTEL",
+					A."U_REQUEST" AS "REQUEST",
+					A."U_TOTAMT" AS "TOTAMT",
+					'' AS "MESSAGE", -- MESSAGE
+					'' AS "COMM", -- COMM
+					'' AS "EVENT", --EVENT
+					B."TreeType" AS "TREETYPE",
+					A."U_DILLNUM" AS "DILLNUM",
+					CASE
+						WHEN B."TreeType" IN ('S', 'T') -- Set, Template(골고루)
+						THEN :ITEMCODE
+						ELSE ''
+					END AS "SETCODE",-- SETCODE,
+					'' AS "ADDORDER",
+					A."U_ITEMNAME" AS "ORDERNAME",
+					A."U_USERID" AS "USERID"
+				FROM "@APR_RDR2" A
+				LEFT JOIN OITM B ON :ITEMCODE = B."ItemName"
+				WHERE A."DocEntry" = :DOCENTRY
+				AND A."LineId" = :i;
+				
+				j := j + 1;
+			END WHILE;
+			
+			-- 옵션 1
+			SELECT
+				LENGTH(A."U_ADDORDER") - LENGTH(REPLACE(A."U_ADDORDER", :STARTSEPARATOR, '')),
+				A."U_ADDORDER"
+			INTO C01ITEMLEN, C01ITEM
+			FROM "@APR_RDR2" A
+			WHERE A."DocEntry" = :DOCENTRY
+			AND A."LineId" = :i;
+			
+			j := 0;
+			WHILE j < C01ITEMLEN DO
+				SELECT
+					SUBSTR_BEFORE(:C01ITEM, :STARTSEPARATOR),
+					SUBSTR_AFTER(:C01ITEM, :STARTSEPARATOR)
+				INTO TITEMCODE, C01ITEM
+				FROM DUMMY;
+				
+				IF SUBSTR_BEFORE(:TITEMCODE, '{') = ''
+				THEN
+					ITEMCODE := :TITEMCODE;
+					ORDERQTY := 1;
+				ELSE
+					ITEMCODE := SUBSTR_BEFORE(:TITEMCODE, '{');
+					ORDERQTY := SUBSTR_AFTER(SUBSTR_BEFORE(:TITEMCODE, '}'), '{');
+				END IF;
+				
+				-- SELECT :ITEMCODE, :ORDERQTY, B."ItemName" FROM DUMMY INNER JOIN OITM B ON :ITEMCODE = B."ItemCode";
+				SELECT
+					B."TreeType"
+				INTO TREETYPE
+				FROM DUMMY
+				INNER JOIN OITM B ON :ITEMCODE = B."ItemCode";
+				
+				IF :TREETYPE = 'N'
+				THEN
+					INSERT INTO #TEMPORDER (
+						ORDERNO,
+						ORDERDT,
+						DOCDATE,
+						ITEMCODE,
+						ITEMNAME,
+						QUANTITY,
+						PRICE,
+						ORDERNM,
+						ORDERTEL,
+						RECEINM,
+						RECPOST,
+						RECADD,
+						RECTEL,
+						REQUEST,
+						TOTAMT,
+						MESSAGE,
+						COMM,
+						EVENT,
+						TREETYPE,
+						DILLNUM,
+						SETCODE,
+						ADDORDER,
+						ORDERNAME,
+						USERID
+					) SELECT
+						A."U_ORDERNO" AS "ORDERNO",
+						TO_NVARCHAR(A."U_ORDERDT", 'YYYYMMDD') AS "ORDERDT",
+						TO_NVARCHAR(A."U_DOCDATE", 'YYYYMMDD') AS "DOCDATE",
+						:ITEMCODE AS "ITEMCODE",
+						B."ItemName" AS "ITEMNAME",
+						:ORDERQTY AS "QUANTITY",
+						A."U_PRICE" AS "PRICE",
+						A."U_ORDERNM" AS "ORDERNM",
+						A."U_ORDERTEL" AS "ORDERTEL",
+						A."U_RECEINM" AS "RECEINM",
+						A."U_RECPOST" AS "RECPOST",
+						A."U_RECADD" AS "RECADD",
+						A."U_RECTEL" AS "RECTEL",
+						A."U_REQUEST" AS "REQUEST",
+						A."U_TOTAMT" AS "TOTAMT",
+						'' AS "MESSAGE", -- MESSAGE
+						'' AS "COMM", -- COMM
+						'' AS "EVENT", --EVENT
+						B."TreeType" AS "TREETYPE",
+						A."U_DILLNUM" AS "DILLNUM",
+						CASE
+							WHEN B."TreeType" IN ('S', 'T') -- Set, Template(골고루)
+							THEN :ITEMCODE
+							ELSE ''
+						END AS "SETCODE",-- SETCODE,
+						'' AS "ADDORDER",
+						A."U_ITEMNAME" AS "ORDERNAME",
+						A."U_USERID" AS "USERID"
+					FROM "@APR_RDR2" A
+					INNER JOIN OITM B ON B."ItemCode" = :ITEMCODE
+					WHERE A."DocEntry" = :DOCENTRY
+					AND A."LineId" = :i;
+				ELSEIF :TREETYPE = 'P'
+				THEN
+					INSERT INTO #TEMPORDER (
+						ORDERNO,
+						ORDERDT,
+						DOCDATE,
+						ITEMCODE,
+						ITEMNAME,
+						QUANTITY,
+						PRICE,
+						ORDERNM,
+						ORDERTEL,
+						RECEINM,
+						RECPOST,
+						RECADD,
+						RECTEL,
+						REQUEST,
+						TOTAMT,
+						MESSAGE,
+						COMM,
+						EVENT,
+						TREETYPE,
+						DILLNUM,
+						SETCODE,
+						ADDORDER,
+						ORDERNAME,
+						USERID
+					) SELECT
+						A."U_ORDERNO" AS "ORDERNO",
+						TO_NVARCHAR(A."U_ORDERDT", 'YYYYMMDD') AS "ORDERDT",
+						TO_NVARCHAR(A."U_DOCDATE", 'YYYYMMDD') AS "DOCDATE",
+						:ITEMCODE AS "ITEMCODE",
+						B."ItemName" AS "ITEMNAME",
+						:ORDERQTY AS "QUANTITY",
+						A."U_PRICE" AS "PRICE",
+						A."U_ORDERNM" AS "ORDERNM",
+						A."U_ORDERTEL" AS "ORDERTEL",
+						A."U_RECEINM" AS "RECEINM",
+						A."U_RECPOST" AS "RECPOST",
+						A."U_RECADD" AS "RECADD",
+						A."U_RECTEL" AS "RECTEL",
+						A."U_REQUEST" AS "REQUEST",
+						A."U_TOTAMT" AS "TOTAMT",
+						'' AS "MESSAGE", -- MESSAGE
+						'' AS "COMM", -- COMM
+						'' AS "EVENT", --EVENT
+						B."TreeType" AS "TREETYPE",
+						A."U_DILLNUM" AS "DILLNUM",
+						CASE
+							WHEN B."TreeType" IN ('S', 'T') -- Set, Template(골고루)
+							THEN :ITEMCODE
+							ELSE ''
+						END AS "SETCODE",-- SETCODE,
+						'' AS "ADDORDER",
+						A."U_ITEMNAME" AS "ORDERNAME",
+						A."U_USERID" AS "USERID"
+					FROM "@APR_RDR2" A
+					INNER JOIN OITM B ON B."ItemCode" = :ITEMCODE
+					WHERE A."DocEntry" = :DOCENTRY
+					AND A."LineId" = :i;
+				END IF;
+				
+				j := j + 1;
+			END WHILE;
+			
+			-- 사은품
+			-- pattern 1) Z102
+			-- pattern 2) /Z102
+			-- pattern 3) Z102{2}
+			-- pattern 4) Z102/Z103
+			SELECT
+				A."U_ORDERNO",
+				A."LineId",
+				CASE
+					WHEN SUBSTR_BEFORE(A."U_EVENT", :STARTSEPARATOR) != ''
+					THEN LENGTH(A."U_EVENT") - LENGTH(REPLACE(A."U_EVENT", :STARTSEPARATOR, ''))
+					WHEN SUBSTR_BEFORE(A."U_EVENT", '}') != ''
+					THEN SUBSTR_BEFORE(SUBSTR_AFTER(A."U_EVENT", '{'), '}')
+					ELSE 1
+				END,
+				CASE
+					WHEN SUBSTR_BEFORE(A."U_EVENT", '/') != ''
+					THEN SUBSTR_BEFORE(A."U_EVENT", '/')
+					WHEN SUBSTR_BEFORE(A."U_EVENT", '}') != ''
+					THEN SUBSTR_BEFORE(A."U_EVENT", '{')
+					ELSE REPLACE(A."U_EVENT", '/', '')
+				END
+			INTO BASEORDERNO, BASELINEID, C01ITEMLEN, C01ITEM
+			FROM "@APR_RDR2" A
+			WHERE A."DocEntry" = :DOCENTRY
+			AND A."LineId" = :i;
+			
+			j := 0;
+			WHILE j < C01ITEMLEN DO
+				SELECT
+					SUBSTR_BEFORE(:C01ITEM, :STARTSEPARATOR),
+					SUBSTR_AFTER(:C01ITEM, :STARTSEPARATOR)
+				INTO TITEMCODE, C01ITEM
+				FROM DUMMY;
+				
+				j := :j + 1;
+			END WHILE;
+			
+		END FOR;
+		
+		-- 제거한 뒤 세트와 골고루 BOM 해체
+	ELSE
+		-- 나머지 거래처는 비즈니스 파트너의 엑셀 타입에서 가져온 괄호 혹은 홀낫표 등을 제거
+		
+		SELECT '나머지 거래처' FROM DUMMY;
+	END IF;
+	
+	SELECT
+		*
+	FROM #TEMPORDER
+	WHERE "ORDERNM" = '박현미'
+	ORDER BY "ORDERNO", "ITEMCODE";
+	
+	DROP TABLE #TEMPORDER;
+END;
+CALL APR_OEM0104(8);
