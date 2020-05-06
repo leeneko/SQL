@@ -43,4 +43,4 @@ BEGIN
 	AND (B."WhsCode" = :WHSCODE OR '' = :WHSCODE)
 	AND (A."DocStatus" = :STATUS OR '' = :STATUS);
 END;
-CALL STD_OEM_O_130 ('20200101', '20200416', '1', '', '', '', '', '', '');
+CALL STD_OEM_O_130 ('20200101', '20200416', '1', 'C00001', '', '', '', '', '');
